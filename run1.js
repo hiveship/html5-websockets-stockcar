@@ -66,7 +66,7 @@ function mainLoop() {
 
 /**
  * Met à jour la voiture.
- * La vitesse peut varier entre '2' et '10', '10' étant le plus rapide.
+ * La vitesse peut varier entre '1' et '10', '10' étant le plus rapide.
  * A chaque demande, la voiture fera une rotation de 'PAS_ANGLE' degrés.
  * La nouvelle position de la voiture est fonction de son orientation et de sa vitesse.
  */
@@ -80,8 +80,8 @@ function update() {
     }
     if (flag_ralentir) {
         car.vitesse--;
-        if (car.vitesse < 2) {
-            car.vitesse = 2;
+        if (car.vitesse < 1) {
+            car.vitesse = 1;
         }
         flag_ralentir = false;
     }
@@ -127,9 +127,6 @@ function colissionBords() {
     if ( car.y + car.image.height / 2 > canvas.height ) { // bas
         car.y = canvas.height - car.image.height / 2;
         return true;
-    }
-    if ( colision && DEBUG ) {
-        console.log("Colision avec un bord du canvas");
     }
     return false;
 }
