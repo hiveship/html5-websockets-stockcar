@@ -19,6 +19,8 @@ var history = [];
 // list of currently connected clients (users)
 var clients = [];
 
+
+
 /**
  * Helper function for escaping input strings
  */
