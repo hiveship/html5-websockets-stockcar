@@ -10,19 +10,14 @@ var http = require('http');
 // ==============================
 
 /**
- * HTTP server
+ * HTTP et Web Socket server
  */
 var server = http.createServer(function (request, response) {
     // Not important for us. We're writing WebSocket server, not HTTP server
 });
-
 server.listen(WEB_SOCKET_SERVER_PORT, function () {
     console.log((new Date()) + " Server is listening on port " + WEB_SOCKET_SERVER_PORT);
 });
-
-/**
- * WebSocket server
- */
 var wsServer = new webSocketServer({
     // WebSocket server is tied to a HTTP server. WebSocket request is just
     // an enhanced HTTP request. For more info http://tools.ietf.org/html/rfc6455#page-6
@@ -30,38 +25,95 @@ var wsServer = new webSocketServer({
 });
 
 /**
- * Joueurs connectés au serveur
+ * Joueurs connectés au serveur. Correspond au nombre de connections Web Sockets ouvertes.
  */
-var joueurs = [];
+var players = [];
 
 // =============================
 // CONSTANTES / VARIABLES DE JEU
 // =============================
-const PAS_ANGLE = 10;
+
+const DEFAULT_PSEUDO = "inconnu";
+const ANGLE_STEP = 10;
 const DEBUG = true;
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 800;
 const CAR_WIDTH = 60;
 const CAR_HEIGHT = 30;
 
-// ==================
-// FLAGS D'EVENEMENTS
-// ==================
+// FLAGS
+// -----
 var flag_finish = false;
-var flag_ralentir = false;
-var flag_accelerer = false;
-var flag_gauche = false;
-var flag_droite = false;
+var flag_started = false;
+var flag_down = false;
+var flag_up = false;
+var flag_left = false;
+var flag_right = false;
 
-// ==============
-// LOGIQUE DU JEU
-// ==============
+// =============
+// CARS CREATION
+// =============
+
+var car1 = {
+    imageID : 0,
+    x : 100, // Placement horizontal
+    y : 100, // Placement vertical
+    orientation : 0,
+    speed : 1
+};
+var car2 = {
+    imageID : 1,
+    x : 400,
+    y : 200,
+    orientation : 30,
+    speed : 1
+};
+var car3 = {
+    imageID : 2,
+    x : 150,
+    y : 600,
+    orientation : 90,
+    speed : 1
+};
+var car4 = {
+    imageID : 3,
+    x : 700,
+    y : 700,
+    orientation : 180,
+    speed : 1
+};
+var car5 = {
+    imageID : 4,
+    x : 300,
+    y : 500,
+    orientation : 45,
+    speed : 1
+};
+var car6 = {
+    imageID : 5,
+    x : 400,
+    y : 400,
+    orientation : 66,
+    speed : 1
+};
+
+var cars = [];
+cars.push(car1);
+cars.push(car2);
+cars.push(car3);
+cars.push(car4);
+cars.push(car5);
+cars.push(car6);
+
+// ==========
+// GAME LOGIC
+// ==========
 
 /**
- * Retourne 'true' si la voiture entre en colision avec un des 4 bords du canvas, 'false' sinon.
- * Si les coordonnées x et y de la voiture dépasse du canvas, elles sont bornées.
+ * Retourne 'true' si la car entre en collide avec un des 4 bords du canvas, 'false' sinon.
+ * Si les coordonnées x et y de la car dépasse du canvas, elles sont bornées.
  */
-function colissionBords(car) {
+function collideEdges(car) {
     if ( car.x + CAR_WIDTH / 2 > CANVAS_WIDTH ) { // bord droit
         car.x = CANVAS_WIDTH - CAR_WIDTH / 2;
         return true;
@@ -82,11 +134,11 @@ function colissionBords(car) {
 }
 
 /**
- * Retourne 'true' si les objets A et B entrent en colision, 'false' sinon
+ * Retourne 'true' si les voitures A et B entrent en collide, 'false' sinon
  * @param A premier objet
  * @param B second objet
  */
-function colision(A, B) {
+function collide(A, B) {
     if ( A.x < B.x + CAR_WIDTH && A.x + CAR_WIDTH > B.x &&
         A.y < B.y + CAR_HEIGHT && A.y + CAR_HEIGHT > B.y ) {
         if ( DEBUG ) {
@@ -97,148 +149,220 @@ function colision(A, B) {
     return false;
 }
 
+/**
+ * Mise à jour de l'état de la car en fonction de l'action reçue.
+ * La speed minimale est de '1' et la speed maximale est de '5'.
+ */
 function update(car) {
-    if ( flag_accelerer ) {
-        car.vitesse++;
-        if ( car.vitesse > 5 ) {
-            car.vitesse = 5;
+    if ( flag_up ) {
+        car.speed++;
+        if ( car.speed > 5 ) {
+            car.speed = 5;
         }
-        flag_accelerer = false;
+        flag_up = false;
     }
-    if ( flag_ralentir ) {
-        car.vitesse--;
-        if ( car.vitesse < 1 ) {
-            car.vitesse = 1;
+    if ( flag_down ) {
+        car.speed--;
+        if ( car.speed < 1 ) {
+            car.speed = 1;
         }
-        flag_ralentir = false;
+        flag_down = false;
     }
-    if ( flag_droite ) {
-        car.orientation = car.orientation + PAS_ANGLE;
-        flag_droite = false;
+    if ( flag_right ) {
+        car.orientation = car.orientation + ANGLE_STEP;
+        flag_right = false;
     }
-    if ( flag_gauche ) {
-        car.orientation = car.orientation - PAS_ANGLE;
-        flag_gauche = false;
-    }
-    
-    for ( let i = 0 ; i < cars.length ; i++ ) {
-        if ( colissionBords(car) || colision(car, cars[ i ]) ) {
-            flag_finish = true;
-        }
+    if ( flag_left ) {
+        car.orientation = car.orientation - ANGLE_STEP;
+        flag_left = false;
     }
 }
 
-function updateDeplacements() {
-    for ( let i = 0 ; i < cars.length ; i++ ) {
-        let car = cars[ i ];
-        // Calcul de la nouvelle position
-        car.x += car.vitesse * Math.cos(Math.PI / 180 * car.orientation);
-        car.y += car.vitesse * Math.sin(Math.PI / 180 * car.orientation);
-    }
-}
-
-// ======================
-// CREATION DES VEHICULES
-// ======================
-var cars = [];
-var imagesID = [ 0, 1 ];
-
-var car1 = {
-    imageID : imagesID.shift(), // TODO: Rendre de nouveau dispo à la fin de la session
-    x : 100, // Placement horizontal
-    y : 100, // Placement vertical
-    orientation : 0,
-    vitesse : 1
-};
-var car2 = {
-    imageID : imagesID.shift(),
-    x : 400,
-    y : 200,
-    orientation : 0,
-    vitesse : 1
-};
-cars.push(car1);
-cars.push(car2);
-
-// TODO: tableau de voitures utilisées
-
-// =============
-// BOUCLE DE JEU
-// =============
-
-setInterval(function () {
-    if ( joueurs.length >= 1 ) {
-        updateDeplacements();
-        envoyerVoitures();
-    }
-}, 50);
-
-// =====================
-// RECEPTION DE REQUÊTES
-// =====================
-
-function envoyerVoitures() { // TODO: Renoyer uniquement les voitures qui sont allouées à un joueur dans le jeu
-    // Il faut envoyer la nouvelle position de toutes les voitures à tous les joueurs
-    //TODO: On ne veux pas envoyer toutes les données, juste x,y,orientation
-    let json = JSON.stringify({ type : 'voitures', data : cars });
-    console.log("SENDING JSON : " + json);
-    for ( let i = 0 ; i < joueurs.length ; i++ ) {
-        joueurs[ i ].sendUTF(json); // broadcast à tous les joueurs connectés
-    }
-}
-
-// This callback function is called every time someone
-// tries to connect to the WebSocket server
-wsServer.on('request', function (request) {
-    if ( DEBUG ) {
-        console.log((new Date()) + ' Connection depuis ' + request.origin + '.');
-    }
-    let connection = request.accept(null, request.origin);
-    let joueur = joueurs.push(connection) - 1;
-    let userCar = false;
-    
-    // user sent some message
-    connection.on('message', function (message) {
-        if ( userCar === false ) { // C'est la première requête //FIXME: Ce n'est pas à faire 'onmessage' mais directement lors de la connection
-            userCar = cars[ Math.floor(Math.random() * cars.length) ]; // Sélection aléatoire //FIXME: Il faut faire un splice pour ne pas allouer 2 fois la même voiture
-            //cars.splice(userCar, 1);
-            //    connection.sendUTF(JSON.stringify(userCar)); TODO: Prévenir l'utilisateur de quelle est sa voiture
-            //  envoyerVoitures();
-        } else {
-            try {
-                let json = JSON.parse(message.utf8Data); // Obligation de mettre utf8Data !
-                if ( json.type === 'action' ) {
-                    console.log("ACTION RECEIVED " + json.data);
-                    switch ( json.data ) {
-                        case 'gauche':
-                            flag_gauche = true;
-                            break;
-                        case 'droite':
-                            flag_droite = true;
-                            break;
-                        case 'accelerer':
-                            flag_accelerer = true;
-                            break;
-                        case 'ralentir':
-                            flag_ralentir = true;
-                            break;
+/**
+ * Met à jour les coordonées des voitures en fonction de leur speed et de leur orientation.
+ */
+function move() {
+    for ( let i = 0 ; i < players.length ; i++ ) {
+        let car = players[ i ].car;
+        
+        if ( players[ i ].active === true ) {
+            // Calcul de la nouvelle position
+            car.x += car.speed * Math.cos(Math.PI / 180 * car.orientation);
+            car.y += car.speed * Math.sin(Math.PI / 180 * car.orientation);
+        }
+        
+        if ( collideEdges(car) ) {
+            players[ i ].active = false;
+            players[ i ].victory = false;
+        }
+        for ( let j = 0 ; j < players.length ; j++ ) {
+            if ( players[ i ].car != players[ j ].car ) { // Ne pas tester la collide avec soit même
+                if ( collide(players[ i ].car, players[ j ].car) ) {
+                    if ( players[ i ].active === false ) {
+                        players[ j ].victory = true;
+                    } else {
+                        players[ j ].active = false;
+                        players[ i ].victory = true;
                     }
-                    update(userCar);
-                    console.log("Message received from client : " + json);
+                    players[ j ].active = false;
+                    flag_finish = true;
                 }
-            } catch ( e ) {
-                console.log('JSON reçu invalide : ', message.data);
             }
         }
-        // TODO: Envoyer un message si flag_finish = true;
+    }
+}
+
+function checkAllCollideEdge() {
+    for ( let i = 0 ; i < players.length ; i++ ) {
+        if ( players[ i ].active === true ) {
+            return;
+        }
+    }
+    flag_finish = true;
+}
+
+// =========
+// GAME LOOP
+// =========
+
+setInterval(function () { // Never stopped
+    if ( flag_started && !flag_finish ) {
+        move();
+        sendCarsToClients();
+        checkAllCollideEdge();
+    } else if ( flag_finish ) {
+        sendResultsToClients();
+        cars = shuffle(cars); // 'Randomiser' l'ordre d'attribution des voitures
+        flag_finish = false;
+        flag_started = false;
+    }
+}, 30); // Délai de rafraichissement en ms
+
+// =========
+// UTILITIES
+// =========
+
+/**
+ *  Fisher-Yates Shuffle
+ */
+function shuffle(array) {
+    let currentIndex = array.length, temporaryValue, randomIndex;
+    
+    // While there remain elements to shuffle...
+    while ( 0 !== currentIndex ) {
+        // Pick a remaining element...
+        randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex -= 1;
+        
+        // And swap it with the current element.
+        temporaryValue = array[ currentIndex ];
+        array[ currentIndex ] = array[ randomIndex ];
+        array[ randomIndex ] = temporaryValue;
+    }
+    return array;
+}
+
+// ========
+// EMISSION
+// ========
+
+function sendCarsToClients() {
+    // Il faut envoyer la nouvelle position de toutes les voitures à tous les players
+    let data = [];
+    for ( let i = 0 ; i < players.length ; i++ ) {
+        data.push(players[ i ].car);
+    }
+
+    let json = JSON.stringify({ type : 'cars', data : data });
+    if ( DEBUG ) {
+        console.log("Sending to clients : " + json);
+    }
+    for ( let i = 0 ; i < players.length ; i++ ) {
+        players[ i ].connection.sendUTF(json); // broadcast à tous les players connectés
+    }
+}
+
+function sendResultsToClients() {
+    for ( let i = 0 ; i < players.length ; i++ ) {
+        let json = {
+            type : 'end',
+            data : players[ i ].victory
+        };
+        players[ i ].connection.sendUTF(JSON.stringify(json)); // broadcast à tous les players connectés
+    }
+}
+
+// =========
+// RECEPTION
+// =========
+
+// Dépendant d'un client.
+wsServer.on('request', function (request) {
+    if ( DEBUG ) {
+        console.log((new Date()) + ' Connection from ' + request.origin + '.');
+    }
+    
+    // Création d'un profil pour le joueur
+    var profil = {
+        pseudo : DEFAULT_PSEUDO,
+        car : cars.shift(),
+        active : true,
+        victory : false,
+        connection : request.accept(null, request.origin)
+    };
+    let joueurIndex;
+    
+    // Réception d'un message
+    profil.connection.on('message', function (message) {
+        if ( profil.active === false ) {
+            return; // Le joueur a perdu, on ignore juste son message
+        }
+        try {
+            let json = JSON.parse(message.utf8Data); // Obligation de mettre utf8Data !
+            if ( DEBUG ) {
+                console.log("Received JSON : " + json);
+            }
+            if ( json.type === 'connect' && profil.pseudo === DEFAULT_PSEUDO ) { // Première requête
+                profil.pseudo = json.data;
+                let profilToSend = { // On ne veux pas envoyer toute les infos (ici, surtout l'objet 'connection') au client
+                    type : 'init',
+                    data : {
+                        pseudo : profil.pseudo,
+                        car : profil.car
+                    }
+                };
+                joueurIndex = players.push(profil) - 1;
+                profil.connection.sendUTF(JSON.stringify(profilToSend));
+                flag_started = true;
+            } else if ( flag_started && json.type === 'action' ) { // Le joueur a fait une action sur le jeu
+                switch ( json.data ) {
+                    case 'left':
+                        flag_left = true;
+                        break;
+                    case 'right':
+                        flag_right = true;
+                        break;
+                    case 'up':
+                        flag_up = true;
+                        break;
+                    case 'down':
+                        flag_down = true;
+                        break;
+                }
+                update(profil.car);
+            } else { // Message invalide reçu
+                //TODO: Envoyer un message pour prévenir le client ? Equivalent d'une HTTP 400
+            }
+        } catch ( e ) {
+            console.log('Invalid JSON received : ', message.data);
+        }
     });
     
-    // user disconnected
-    connection.on('close', function (connection) { //FIXME: La connection semble se fermer toute seule pour rien...
+    // Déconnection du joueur / fermeture Web Socket
+    profil.connection.on('close', function (connection) { // La connection sera fermée lors du fermement/rechargement d'onglet ou sur demande
         console.log((new Date()) + " Peer " + connection.remoteAddress + " disconnected.");
-        joueurs.splice(joueur, 1);
-        //cars.splice(userCar, 1);
-        //cars.push(userCar); // Rends la voiture de nouveau disponible TODO: pas prévu encore
+        players.splice(joueurIndex, 1);
+        cars.push(profil.car); // Rends la car de nouveau disponible
     });
 });
 
