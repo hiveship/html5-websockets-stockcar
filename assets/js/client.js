@@ -7,7 +7,9 @@ $(function () {
     // ELEMENTS DU DOM
     // ===============
     
-    var input = $('#input');
+    var input = $('#input'); // Champ de saisie du mot du login
+    var video = document.querySelector('video');
+    navigator.getMedia = ( navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia);
     
     // ===============
     // INITIALISATIONS
@@ -23,12 +25,21 @@ $(function () {
     
     var connection = new WebSocket('ws://localhost:1099');
     connection.onerror = function (error) {
+        if ( DEBUG ) {
+            console.log(error);
+        }
         $("#webSocketPrompt").text("Can not establish Web Socket connection:(");
         document.getElementById('input').style.display = "none";
     };
     
+    // Pour du debug, on peut apprécier voir le code de fermeture de la connection
+    // Voir : https://developer.mozilla.org/en-US/docs/Web/API/CloseEvent
+    connection.onclose = function (closeEvent) {
+        console.log("Close connection with code : " + closeEvent.code);
+    };
+    
     // ----------------------- CONTRÔLE DE L'AFFICHAGE
-    var canvas = document.getElementById("canvas");
+    var canvas = document.getElementById("canvasGame");
     var gamepad_connected = false;
     
     // ----------------------- CONTRÔLE DU JEU
@@ -37,7 +48,7 @@ $(function () {
     var flag_left = false;
     var flag_right = false;
     
-    // Chargement des images par le client une fois pour toute par le client
+    // Chargement des images une fois pour toute par le client
     var images = [
         new Image(),
         new Image(),
@@ -56,12 +67,12 @@ $(function () {
     // ==============
     // GESTION DU JEU
     // ==============
-
+    
     // Obligé de faire une boucle de jeu pour scruter le gamepad
     setInterval(function () { // Never stopped
         update();
-    }, 30); // Délai de rafraichissement en ms
-
+    }, 50); // Délai de rafraichissement en ms
+    
     /**
      * Notifie le serveur lorsque une action a été effectuée par le joueur
      */
@@ -128,7 +139,6 @@ $(function () {
         }
     }
     
-    
     // ===================
     // GESTIION DU GAMEPAD
     // ===================
@@ -136,7 +146,6 @@ $(function () {
     /**
      * Taite les actions sur les boutons '1', '2', '3' et '4' du gamepad.
      * Il faut appeler cette fonction dans la boucle de jeu car il n'y a pas d'event handler associé au gamepad.
-     * FIXME: Après recherches, les actions sur les flèches ne sont pas des 'buttons' mais des 'axes'
      */
     function checkGamepad() {
         if ( gamepad_connected ) {
@@ -156,6 +165,23 @@ $(function () {
         }
     }
     
+    // =====================
+    // GESTION DE LA WEB CAM
+    // =====================
+    
+    function takeAndSendPicture() {
+        // Take the picture and set it to the canvas
+        let canvasVideo = document.getElementById('canvasVideo');
+        canvasVideo.getContext('2d').drawImage(video, 0, 0, 100, 100); // Capture du flux vidéo pour en faire une image
+        //FIXME: Il y a une erreur 1009 FRAME TO BIG lorsque on envoie des images plus grande (par exemple 150*150). Pourquoi ??
+        // Send the picture to the server
+        let json = {
+            type : 'photo',
+            data : canvasVideo.toDataURL('image/png')
+        };
+        connection.send(JSON.stringify(json));
+    }
+    
     // ========================================
     // RECEPTION DES MESSAGES DEPUIS LE SERVEUR
     // ========================================
@@ -166,34 +192,43 @@ $(function () {
     connection.onmessage = function (message) {
         // Vérifions que le message reçu est un JSON correctement formé
         try {
-            var json = JSON.parse(message.data);
             if ( DEBUG ) {
-                console.log("Receveid from server : " + json.data);
+                console.log("Receveid from server : " + message.data);
+            }
+            let json = JSON.parse(message.data);
+            
+            if ( json.type === 'init' ) { // Le serveur nous informe de la car qui nous a été affectée
+                document.getElementById('gameInfo').innerHTML += "Hi, " + json.data.pseudo + " ! Here is your car: ";
+                document.getElementById('gameInfo').innerHTML += images[ json.data.car.imageID ].outerHTML;
+            } else if ( json.type === 'cars' ) { // Position des voitures envoyées par le serveur
+                // Efface les anciens affichages
+                let context = canvas.getContext("2d");
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                
+                var cars = json.data;
+                for ( let i = 0 ; i < cars.length ; i++ ) {
+                    draw(cars[ i ]);
+                }
+            } else if ( json.type === 'end' ) {
+                if ( json.data === true ) {
+                    document.getElementById('gameInfo').innerHTML += "The game is finish ! You won :) <br />";
+                } else {
+                    takeAndSendPicture();
+                    document.getElementById('gameInfo').innerHTML += "The game is finish ! You loose :( <br />";
+                }
+            } else if ( json.type === 'photo' ) {
+                // Afficher l'image reçue
+                let img = document.createElement("img");
+                if ( json.data === null ) {
+                    img.src = "http://www.squishable.com/mm5/graphics/00000001/comfortfood_pancakes.jpg";
+                } else {
+                    img.src = "data:" + json.data;
+                }
+                document.getElementById("resultat").innerHTML += "<p>Here is the last looser: <br/></p>";
+                document.getElementById("resultat").appendChild(img);
             }
         } catch ( e ) {
-            console.log('Invalid JSON received : ', message.data);
-            return;
-        }
-        
-        if ( json.type === 'init' ) { // Le serveur nous informe de la car qui nous a été affectée
-            document.getElementById('gameInfo').innerHTML += "Hi, " + json.data.pseudo + " ! Here is your car : \n";
-            document.getElementById('gameInfo').innerHTML += images[ json.data.car.imageID ].outerHTML;
-        } else if ( json.type === 'cars' ) { // Position des voitures envoyées par le serveur
-            // Efface les anciens affichages
-            let context = canvas.getContext("2d");
-            context.clearRect(0, 0, canvas.width, canvas.height);
-            
-            var cars = json.data;
-            for ( let i = 0 ; i < cars.length ; i++ ) {
-                draw(cars[ i ]);
-            }
-        } else if ( json.type === 'end' ) {
-            if ( json.data === true ) {
-                document.getElementById('gameInfo').innerHTML += "\n The game is finish ! You won :)\n";
-            } else {
-                document.getElementById('gameInfo').innerHTML += "\n The game is finish ! You loose :(\n";
-                window.removeEventListener("keydown", keypress_handler, false); // Empêcher d'envoyer des messages au serveur
-            }
+            console.log("Error occured : " + e);
         }
     };
     
@@ -241,5 +276,26 @@ $(function () {
         if ( navigator.getGamepads()[ 0 ] ) { // Regarde si un gamepad est déjà branché avant l'éxécution du JavaScript
             gamepad_connected = true;
         }
+        
+        // Start the webcam video
+        navigator.getMedia(
+            {
+                video : true,
+                audio : false
+            },
+            function (stream) {
+                if ( navigator.mozGetUserMedia ) {
+                    video.mozSrcObject = stream;
+                } else {
+                    let vendorURL = window.URL || window.webkitURL;
+                    video.src = vendorURL.createObjectURL(stream);
+                }
+                video.play();
+            },
+            function (err) {
+                console.log("An error occured! " + err);
+            }
+        );
+        
     });
 });

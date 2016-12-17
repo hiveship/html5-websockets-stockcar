@@ -1,6 +1,8 @@
 "use strict";
 process.title = 'fuzzy-pancake-server';
 
+const DEBUG = true;
+
 const WEB_SOCKET_SERVER_PORT = 1099;
 var webSocketServer = require('websocket').server;
 var http = require('http');
@@ -35,7 +37,6 @@ var players = [];
 
 const DEFAULT_PSEUDO = "inconnu";
 const ANGLE_STEP = 10;
-const DEBUG = true;
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 800;
 const CAR_WIDTH = 60;
@@ -104,6 +105,7 @@ cars.push(car3);
 cars.push(car4);
 cars.push(car5);
 cars.push(car6);
+cars = shuffle(cars); // 'Randomiser' l'ordre d'attribution des voitures
 
 // ==========
 // GAME LOGIC
@@ -196,7 +198,7 @@ function move() {
             players[ i ].victory = false;
         }
         for ( let j = 0 ; j < players.length ; j++ ) {
-            if ( players[ i ].car != players[ j ].car ) { // Ne pas tester la collide avec soit même
+            if ( players[ i ].car != players[ j ].car ) { // Ne pas tester la collision avec soit même
                 if ( collide(players[ i ].car, players[ j ].car) ) {
                     if ( players[ i ].active === false ) {
                         players[ j ].victory = true;
@@ -232,11 +234,11 @@ setInterval(function () { // Never stopped
         checkAllCollideEdge();
     } else if ( flag_finish ) {
         sendResultsToClients();
-        cars = shuffle(cars); // 'Randomiser' l'ordre d'attribution des voitures
+        cars = shuffle(cars);
         flag_finish = false;
         flag_started = false;
     }
-}, 30); // Délai de rafraichissement en ms
+}, 50); // Délai de rafraichissement en ms
 
 // =========
 // UTILITIES
@@ -267,18 +269,18 @@ function shuffle(array) {
 // ========
 
 function sendCarsToClients() {
-    // Il faut envoyer la nouvelle position de toutes les voitures à tous les players
+    // Il faut envoyer la nouvelle position de toutes les voitures à tous les joueurs
     let data = [];
     for ( let i = 0 ; i < players.length ; i++ ) {
         data.push(players[ i ].car);
     }
-
+    
     let json = JSON.stringify({ type : 'cars', data : data });
     if ( DEBUG ) {
         console.log("Sending to clients : " + json);
     }
     for ( let i = 0 ; i < players.length ; i++ ) {
-        players[ i ].connection.sendUTF(json); // broadcast à tous les players connectés
+        players[ i ].connection.sendUTF(json); // broadcast à tous les joueurs connectés
     }
 }
 
@@ -288,7 +290,20 @@ function sendResultsToClients() {
             type : 'end',
             data : players[ i ].victory
         };
-        players[ i ].connection.sendUTF(JSON.stringify(json)); // broadcast à tous les players connectés
+        players[ i ].connection.sendUTF(JSON.stringify(json)); // broadcast à tous les joueurs connectés
+    }
+}
+
+function broadcastImage(emetteur, image) {
+    for ( let i = 0 ; i < players.length ; i++ ) {
+        let player = players[ i ];
+        if ( player != emetteur ) {
+            let json = {
+                type : 'photo',
+                data : image
+            };
+            player.connection.sendUTF(JSON.stringify(json)); // broadcast à tous les joueurs connectés
+        }
     }
 }
 
@@ -312,16 +327,14 @@ wsServer.on('request', function (request) {
     };
     let joueurIndex;
     
-    // Réception d'un message
+    // Réception d'un message dans la connection Web Socket
     profil.connection.on('message', function (message) {
-        if ( profil.active === false ) {
-            return; // Le joueur a perdu, on ignore juste son message
-        }
         try {
-            let json = JSON.parse(message.utf8Data); // Obligation de mettre utf8Data !
             if ( DEBUG ) {
-                console.log("Received JSON : " + json);
+                console.log("Received JSON : " + message.utf8Data);
             }
+            let json = JSON.parse(message.utf8Data); // Obligation de mettre utf8Data !
+            
             if ( json.type === 'connect' && profil.pseudo === DEFAULT_PSEUDO ) { // Première requête
                 profil.pseudo = json.data;
                 let profilToSend = { // On ne veux pas envoyer toute les infos (ici, surtout l'objet 'connection') au client
@@ -331,7 +344,7 @@ wsServer.on('request', function (request) {
                         car : profil.car
                     }
                 };
-                joueurIndex = players.push(profil) - 1;
+                joueurIndex = players.push(profil) - 1; // Garder index pour pouvoir le supprimer du tableau après
                 profil.connection.sendUTF(JSON.stringify(profilToSend));
                 flag_started = true;
             } else if ( flag_started && json.type === 'action' ) { // Le joueur a fait une action sur le jeu
@@ -350,8 +363,8 @@ wsServer.on('request', function (request) {
                         break;
                 }
                 update(profil.car);
-            } else { // Message invalide reçu
-                //TODO: Envoyer un message pour prévenir le client ? Equivalent d'une HTTP 400
+            } else if ( json.type === 'photo' ) {
+                broadcastImage(profil, json.data); // On a reçu l'image du perdant, on la transmet à tous les autres joueurs
             }
         } catch ( e ) {
             console.log('Invalid JSON received : ', message.data);

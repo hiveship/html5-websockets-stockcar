@@ -1,4 +1,15 @@
 # fuzzy-pancake
-Minimalist Online Game using HTML5 WebSockets
+A simple and minimalist online game using HTML5 WebSockets. 
+The aim of this school project is to use the WebSockets in a client/server application (using NodeJS) in order to develop a "Stock Car" game
 
-A REDIGER...
+## How to run ?
+Start the server part using the command 
+```
+$ node assets/js/server.js
+```
+This will start a NodeJS Web Sockets server listening on port ```1099```
+
+You can now access the game using your favorite web server and the 
+
+
+## Demo
