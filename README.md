@@ -1,4 +1,4 @@
-# Stock-Car mini game using HTML5 Web Sockets (fuzzy-pancake)
+# Stock-Car mini game using HTML5 Web Sockets
 
 A simple and minimalist online game using HTML5 WebSockets. 
 The aim of this school project is to use the WebSockets in a client/server application (using NodeJS) in order to develop a "Stock Car" game
